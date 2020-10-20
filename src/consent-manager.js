@@ -1,23 +1,31 @@
-import {getCookies, deleteCookie} from 'utils/cookies'
-import {dataset, applyDataset} from 'utils/compat'
-import stores from 'stores'
+import {getCookies, deleteCookie} from './utils/cookies'
+import {dataset, applyDataset} from './utils/compat'
+import stores, { SessionStorageStore } from './stores'
 
 export default class ConsentManager {
 
-    constructor(config){
+    constructor(config, store, auxiliaryStore){
         this.config = config // the configuration
 
-        this.store = new stores[this.storageMethod](this)
+        if (store !== undefined)
+            this.store = store
+        else
+            this.store = new stores[this.storageMethod](this)
 
         // we fall back to the cookie-based store if the store is undefined
         if (this.store === undefined)
             this.store = stores['cookie']
 
-        this.consents = this.defaultConsents // the consent states of the configured apps
+        if (auxiliaryStore !== undefined)
+            this.auxiliaryStore = auxiliaryStore
+        else
+            this.auxiliaryStore = new SessionStorageStore(this)
+
+        this.consents = this.defaultConsents // the consent states of the configured services
         this.confirmed = false // true if the user actively confirmed his/her consent
-        this.changed = false // true if the app config changed compared to the cookie
-        this.states = {} // keep track of the change (enabled, disabled) of individual apps
-        this.executedOnce = {} //keep track of which apps have been executed at least once
+        this.changed = false // true if the service config changed compared to the cookie
+        this.states = {} // keep track of the change (enabled, disabled) of individual services
+        this.executedOnce = {} //keep track of which services have been executed at least once
         this.watchers = new Set([])
         this.loadConsents()
         this.applyConsents()
@@ -45,9 +53,9 @@ export default class ConsentManager {
 
     get defaultConsents(){
         const consents = {}
-        for(let i=0;i<this.config.apps.length;i++){
-            const app = this.config.apps[i]
-            consents[app.name] = this.getDefaultConsent(app)
+        for(let i=0;i<this.config.services.length;i++){
+            const service = this.config.services[i]
+            consents[service.name] = this.getDefaultConsent(service)
         }
         return consents
     }
@@ -68,15 +76,15 @@ export default class ConsentManager {
         })
     }
 
-    getApp(name){
-        const matchingApps = this.config.apps.filter(app=>app.name === name)
-        if (matchingApps.length > 0)
-            return matchingApps[0]
+    getService(name){
+        const matchingServices = this.config.services.filter(service=>service.name === name)
+        if (matchingServices.length > 0)
+            return matchingServices[0]
         return undefined
     }
 
-    getDefaultConsent(app){
-        let consent = app.default || app.required
+    getDefaultConsent(service){
+        let consent = service.default || service.required
         if (consent === undefined)
             consent = this.config.default
         if (consent === undefined)
@@ -85,17 +93,17 @@ export default class ConsentManager {
     }
 
     changeAll(value){
-        let changedApps = 0
-        this.config.apps.map((app) => {
-            if(app.required || this.config.required || value) {
-                if (this.updateConsent(app.name, true))
-                    changedApps++
+        let changedServices = 0
+        this.config.services.map((service) => {
+            if(service.required || this.config.required || value) {
+                if (this.updateConsent(service.name, true))
+                    changedServices++
             } else {
-                if (this.updateConsent(app.name, false))
-                    changedApps++
+                if (this.updateConsent(service.name, false))
+                    changedServices++
             }
         })
-        return changedApps
+        return changedServices
     }
 
     updateConsent(name, value){
@@ -134,57 +142,67 @@ export default class ConsentManager {
         return this.consents
     }
 
-    saveAndApplyConsents(){
-        this.saveConsents()
+    saveAndApplyConsents(eventType){
+        this.saveConsents(eventType)
         this.applyConsents()
     }
 
-    saveConsents(){
+    changedConsents(){
+        const cc = {}
+        for(const [k, v] of Object.entries(this.consents)){
+            if (this.savedConsents[k] !== v)
+                cc[k] = v
+        }
+        return cc
+    }
+
+    saveConsents(eventType){
         const v = encodeURIComponent(JSON.stringify(this.consents))
         this.store.set(v);
         this.confirmed = true
         this.changed = false
+        const changes = this.changedConsents()
         this.savedConsents = {...this.consents}
-        this.notify('saveConsents', this.consents)
+        this.notify('saveConsents', {changes: changes, consents: this.consents, type: eventType})
     }
 
     applyConsents(dryRun){
-        let changedApps = 0
-        for(let i=0;i<this.config.apps.length;i++){
-            const app = this.config.apps[i]
-            const state = this.states[app.name]
-            const optOut = (app.optOut !== undefined ? app.optOut : (this.config.optOut || false))
-            const required = (app.required !== undefined ? app.required : (this.config.required || false))
-            //opt out and required apps are always treated as confirmed
+        let changedServices = 0
+        for(let i=0;i<this.config.services.length;i++){
+            const service = this.config.services[i]
+            const state = this.states[service.name]
+            const optOut = (service.optOut !== undefined ? service.optOut : (this.config.optOut || false))
+            const required = (service.required !== undefined ? service.required : (this.config.required || false))
+            //opt out and required services are always treated as confirmed
             const confirmed = this.confirmed || optOut || dryRun
-            const consent = (this.getConsent(app.name) && confirmed) || required
+            const consent = (this.getConsent(service.name) && confirmed) || required
             if (state === consent)
                 continue
-            changedApps++
+            changedServices++
             if (dryRun)
                 continue
-            this.updateAppElements(app, consent)
-            this.updateAppCookies(app, consent)
-            if (app.callback !== undefined)
-                app.callback(consent, app)
+            this.updateServiceElements(service, consent)
+            this.updateServiceCookies(service, consent)
+            if (service.callback !== undefined)
+                service.callback(consent, service)
             if (this.config.callback !== undefined)
-                this.config.callback(consent, app)
-            this.states[app.name] = consent
+                this.config.callback(consent, service)
+            this.states[service.name] = consent
         }
-        this.notify('applyConsents', changedApps)
-        return changedApps
+        this.notify('applyConsents', changedServices)
+        return changedServices
     }
 
-    updateAppElements(app, consent){
+    updateServiceElements(service, consent){
 
-        // we make sure we execute this app only once if the option is set
+        // we make sure we execute this service only once if the option is set
         if (consent){
-            if (app.onlyOnce && this.executedOnce[app.name])
+            if (service.onlyOnce && this.executedOnce[service.name])
                 return
-            this.executedOnce[app.name] = true
+            this.executedOnce[service.name] = true
         }
 
-        const elements = document.querySelectorAll("[data-name='"+app.name+"']")
+        const elements = document.querySelectorAll("[data-name='"+service.name+"']")
         for(let i=0;i<elements.length;i++){
             const element = elements[i]
 
@@ -196,16 +214,16 @@ export default class ConsentManager {
             //if no consent was given we disable this tracker
             //we remove and add it again to trigger a re-execution
 
-            if (element.tagName === 'SCRIPT'){
+            if (element.tagName === 'SCRIPT' || element.tagName === 'LINK'){
                 // this element is already active, we do not touch it...
                 if (element.type === type){
                     // eslint-disable-next-line no-console
-                    console.debug(`Skipping script for app ${app.name}, as it already has the correct type...`)
+                    console.debug(`Skipping ${element.tagName} for service ${service.name}, as it already has the correct type...`)
                     continue
                 }
                 // we create a new script instead of updating the node in
                 // place, as the script won't start correctly otherwise
-                const newElement = document.createElement('script')
+                const newElement = document.createElement(element.tagName)
                 for(const attribute of element.attributes){
                     newElement.setAttribute(attribute.name, attribute.value)
                 }
@@ -217,6 +235,8 @@ export default class ConsentManager {
                     newElement.type = type
                     if (ds.src !== undefined)
                         newElement.src = ds.src
+                    if (ds.href !== undefined)
+                        newElement.href = ds.href
                 } else {
                     newElement.type = 'text/plain'
                 }
@@ -262,7 +282,7 @@ export default class ConsentManager {
 
     }
 
-    updateAppCookies(app, consent){
+    updateServiceCookies(service, consent){
 
         if (consent)
             return
@@ -271,14 +291,21 @@ export default class ConsentManager {
             return str.replace(/[-[\]/{}()*+?.\\^$|]/g, "\\$&");
         }
 
-        if (app.cookies !== undefined && app.cookies.length > 0){
+        if (service.cookies !== undefined && service.cookies.length > 0){
             const cookies = getCookies()
-            for(let i=0;i<app.cookies.length;i++){
-                let cookiePattern = app.cookies[i]
+            for(let i=0;i<service.cookies.length;i++){
+                let cookiePattern = service.cookies[i]
                 let cookiePath, cookieDomain
                 if (cookiePattern instanceof Array){
                     [cookiePattern, cookiePath, cookieDomain] = cookiePattern
+                } else if (cookiePattern instanceof Object && !(cookiePattern instanceof RegExp)){
+                    const cp = cookiePattern
+                    cookiePattern = cp.pattern
+                    cookiePath = cp.path
+                    cookieDomain = cp.domain
                 }
+                if (cookiePattern === undefined)
+                    continue
                 if (!(cookiePattern instanceof RegExp)){
                     cookiePattern = new RegExp('^'+escapeRegexStr(cookiePattern)+'$')
                 }
@@ -300,16 +327,16 @@ export default class ConsentManager {
 
     _checkConsents(){
         let complete = true
-        const apps = new Set(this.config.apps.map((app)=>{return app.name}))
+        const services = new Set(this.config.services.map((service)=>{return service.name}))
         const consents = new Set(Object.keys(this.consents))
         for(const key of Object.keys(this.consents)){
-            if (!apps.has(key)){
+            if (!services.has(key)){
                 delete this.consents[key]
             }
         }
-        for(const app of this.config.apps){
-            if (!consents.has(app.name)){
-                this.consents[app.name] = this.getDefaultConsent(app)
+        for(const service of this.config.services){
+            if (!consents.has(service.name)){
+                this.consents[service.name] = this.getDefaultConsent(service)
                 complete = false
             }
         }

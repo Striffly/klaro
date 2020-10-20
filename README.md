@@ -31,25 +31,27 @@ Current languages: Catalan, Croatian, Dutch, English, Finnish, French, German, G
 
 **You can now find more extensive documentation on [our website](https://kiprotect.com/docs/klaro).**
 
-To use the widget on your website, simply embed Klaro as well as a valid config. You can have a look at the [annotated config.js](dist/config.js) to see how it works. If you want to self-host Klaro you can download compiled JS files from [our website](https://kiprotect.com/docs/klaro/releases), where you can find a full list of past Klaro releases. **Do not use the `klaro.js` file from the `src` folder, it will not work in the browser as it's an  ES6 module and needs to be transpiled first (for most browsers at least).** Follow the instructions below to adapt the config to your needs and then include the two files in your website like this:
+To use the widget on your website, simply embed Klaro as well as a valid config. You can have a look at the [annotated config.js](dist/config.js) to see how it works. If you want to self-host Klaro you can download compiled JS files from the `dist` folder of this repository, or go to [our website](https://kiprotect.com/docs/klaro/releases), where you can find a full list of past Klaro releases. **Do not use the `klaro.js` file from the `src` folder, it will not work in the browser as it's an  ES6 module and needs to be transpiled first (for most browsers at least).** Follow the instructions below to adapt the config to your needs and then include the two files in your website like this:
 ```html
 <!-- make sure the config gets loaded before Klaro -->
 <script defer type="text/javascript" src="config.js"></script>
-<script defer type="text/javascript" src="https://cdn.kiprotect.com/klaro/latest/klaro.js"></script>
+<script defer type="text/javascript" src="https://cdn.kiprotect.com/klaro/[klaro-version]/klaro.js"></script>
 
 ```
 
-You can replace `latest` with a version number (e.g. `v0.5.30`) to download a specific version of Klaro. Do not forget to change your existing apps/trackers as outlined in the next section as well, so that Klaro can manage them. By default, Klaro will automatically open once the page is fully loaded.
+You should replace `[klaro-version]` with a version number (e.g. `v0.5.30`) to download a specific version of Klaro. **Important:** We no longer update  `latest` version tag in the CDN as loading Klaro from it might lead to breaking your installation when new major or minor versions are published. We will soon replace the tag with minor version tags (e.g. `0.7`) that will receive automated security upgrades and bugfixes and can be safely used to embed Klaro without risking breaking changes.
+
+Do not forget to change your existing apps/trackers as outlined in the next section as well, so that Klaro can manage them. By default, Klaro will automatically open once the page is fully loaded.
 
 We also provide a version of Klaro without stylesheets included, which is useful
-in case you want to provide your own styles: [klaro-no-css.js](https://cdn.kiprotect.com/klaro/latest/klaro-no-css.js). If you use this, make sure to either include your own styles or to include [klaro.min.css](https://cdn.kiprotect.com/klaro/latest/klaro.min.css) separetely, like this:
+in case you want to provide your own styles: [klaro-no-css.js](https://cdn.kiprotect.com/klaro/[klaro-version]/klaro-no-css.js). If you use this, make sure to either include your own styles or to include [klaro.min.css](https://cdn.kiprotect.com/klaro/[klaro-version]/klaro.min.css) separetely, like this:
 
 ```html
-<link rel="stylesheet" href="https://cdn.kiprotect.com/klaro/latest/klaro.min.css" />
+<link rel="stylesheet" href="https://cdn.kiprotect.com/klaro/[klaro-version]/klaro.min.css" />
 ```
 
 We also provide a non-minified version of the stylesheet, which is great if you
-want to make your own version: [klaro.css](https://cdn.kiprotect.com/klaro/latest/klaro.css).
+want to make your own version: [klaro.css](https://cdn.kiprotect.com/klaro/[klaro-version]/klaro.css).
 
 If you wish to open the consent manager manually on user interaction (for example through a link in the privacy policy), you can simply call ```klaro.show()``` via Javascript. Example:
 ```html
@@ -97,7 +99,7 @@ import * as klaro from 'klaro/dist/klaro-no-css'
 import 'klaro/dist/klaro.css'
 
 // import only the consent manager (no UI components)
-import 'klaro/dist/consent-manager'
+import 'klaro/dist/cm'
 ```
 
 This enables you to seamlessly integrate Klaro with your own JS projects, regardless if you use React, Vue,

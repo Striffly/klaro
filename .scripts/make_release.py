@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import yaml
+import base64
 import hashlib
 import subprocess
 
@@ -12,7 +13,6 @@ releases_yml_path = os.path.join(wd, "releases.yml")
 releases_json_path = os.path.join(wd, "releases.json")
 
 build_path = os.path.join(wd, "dist")
-release_files = ["klaro.js", "klaro-no-css.js", "klaro.css", "klaro.min.css"]
 
 # this forces pyyaml to produce cleaner looking strings
 # https://stackoverflow.com/questions/8640959/how-can-i-control-what-scalar-form-pyyaml-uses-for-my-data
@@ -29,7 +29,7 @@ def hash_file(filename, methods=[hashlib.sha256]):
         c = file.read()
         for method in methods:
             # a bit hacky but it works...
-            d[method.__name__.split("_")[1]] = method(c).hexdigest()
+            d[method.__name__.split("_")[1]] = base64.b64encode(method(c).digest()).decode("ascii")
     return d
 
 if __name__ == '__main__':
@@ -37,6 +37,9 @@ if __name__ == '__main__':
         rt = 'patch'
     else:
         rt = sys.argv[1]
+    push = False
+    if '--push' in sys.argv[2:]:
+        push = True
     if not rt in ('patch', 'minor', 'major'):
         sys.stderr.write("usage: {} patch|minor|major".format(sys.argv[0]))
         exit(1)
@@ -72,7 +75,7 @@ if __name__ == '__main__':
         exit(-1)
 
     env = os.environ.copy()
-    env['APP_VERSION'] = v
+    env['APP_VERSION'] = "v"+v
     subprocess.check_output(["make", "build"], cwd=wd, env=env)
 
     # everything below here should not fail anymore...
@@ -80,17 +83,22 @@ if __name__ == '__main__':
     # we add the SHA sums of the files to the release (can be used for
     # subresource integrity)
     files = []
-    for filename in release_files:
+    for filename in os.listdir(build_path):
+        # we only hash JS and CSS files
+        if not filename.endswith('.css') and not filename.endswith('.js'):
+            continue
+        # these files we exclude since they are e.g. only for demonstration purpose
+        if filename in ('config.js'):
+            continue
         d = {
             "name" : filename,
         }
         d.update(hash_file(os.path.join(build_path, filename),
-            methods=[hashlib.sha256, hashlib.sha1, hashlib.md5, hashlib.sha384]))
+            methods=[hashlib.sha384]))
         files.append(d)
     release["files"] = files
-
-    with open(releases_yml_path, 'w') as output_file:
-        output_file.write(yaml.dump(releases, indent=2, sort_keys=True, default_flow_style=False))
+    with open(releases_yml_path, 'wb') as output_file:
+        output_file.write(yaml.dump(releases, allow_unicode=True, encoding='utf-8', indent=2, sort_keys=True, default_flow_style=False))
 
     # we update the JSON releases file to reflect the YAML one
     with open(releases_json_path, 'w') as output_file:
@@ -101,9 +109,9 @@ if __name__ == '__main__':
     with open(package_path, 'w') as output_file:
         json.dump(config, output_file, indent=2, sort_keys=True)
 
-
     subprocess.check_output(["git", "add", "."], cwd=wd)
     subprocess.check_output(["git", "commit", "-m", f"v{v}"], cwd=wd)
     subprocess.check_output(["git", "tag", "-a", f"v{v}", "-m", f"v{v}"], cwd=wd)
-    subprocess.check_output(["git", "push", "origin", "master", "--tags"], cwd=wd)
-    subprocess.check_output(["git", "push", "geordi", "master", "--tags"], cwd=wd)
+    if push:
+        subprocess.check_output(["git", "push", "origin", "master", "--tags"], cwd=wd)
+        subprocess.check_output(["git", "push", "geordi", "master", "--tags"], cwd=wd)

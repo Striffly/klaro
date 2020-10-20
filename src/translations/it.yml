@@ -1,43 +1,69 @@
 # Warning, this file is partially automatically generated!
 acceptAll: Accettare tutti
 acceptSelected: Accettare selezionato
-app:
-  disableAll:
-    description: Utilizzi questo interruttore per attivare o disattivare tutte le
-      app.
-    title: Attivare o disattivare tutte le app
-  optOut:
-    description: "Questa app \xE8 caricata per impostazione predefinita (ma \xE8 possibile\
-      \ scegliere di non utilizzare l'app)"
-    title: (opt-out)
-  purpose: Scopo dell
-  purposes: "Finalit\xE0"
-  required:
-    description: "Questa richiesta \xE8 sempre necessaria"
-    title: (sempre richiesto)
 close: Chiudi
 consentModal:
-  description: "Qui pu\xF2 vedere e personalizzare le informazioni che raccogliamo\
-    \ su di lei."
+  description: Qui può valutare e personalizzare i servizi che vorremmo utilizzare
+    su questo sito web. È lei il responsabile! Abilitare o disabilitare i servizi
+    come meglio crede.
   privacyPolicy:
     name: informativa sulla privacy
-    text: "Per saperne di pi\xF9, legga la nostra {privacyPolicy}."
-  title: Informazioni che raccogliamo
+    text: Per saperne di più, legga la nostra {privacyPolicy}.
+  title: Servizi che desideriamo utilizzare
 consentNotice:
   changeDescription: Ci sono stati dei cambiamenti rispetto alla sua ultima visita,
-    la preghiamo di aggiornare il suo consenso.
+    la preghiamo di rinnovare il suo consenso.
   configure: configurare
-  description: "Raccogliamo ed elaboriamo i suoi dati personali per le seguenti finalit\xE0\
-    : {purposes}."
+  description: Salve, possiamo attivare alcuni servizi aggiuntivi per {purposes}?
+    Può sempre modificare o ritirare il suo consenso in un secondo momento.
   imprint:
     name: impronta
-  learnMore: Personalizzare
+  learnMore: Lasciatemi scegliere
   privacyPolicy:
     name: informativa sulla privacy
-decline: Declino
-ok: Accettare
+  testing: Modalità di test!
+decline: Rifiuto
+ok: Va bene così
 poweredBy: Realizzato con Klaro!
+privacyPolicy:
+  name: informativa sulla privacy
+  text: Per saperne di più, legga la nostra {privacyPolicy}.
 purposeItem:
-  app: domanda
-  apps: applicazioni
+  service: servizio
+  services: servizi
+purposes:
+  advertising:
+    description: Questi servizi elaborano le informazioni personali per mostrarle
+      annunci pubblicitari personalizzati o basati su interessi.
+    title: Pubblicità
+  functional:
+    description: 'Questi servizi sono essenziali per il corretto funzionamento di
+      questo sito web. Non può disattivarli qui perché altrimenti il servizio non
+      funzionerebbe correttamente.
+
+      '
+    title: Fornitura di servizi
+  marketing:
+    description: Questi servizi elaborano le informazioni personali per mostrarle
+      contenuti rilevanti su prodotti, servizi o argomenti che potrebbero interessarla.
+    title: Marketing
+  performance:
+    description: 'Questi servizi elaborano le informazioni personali per ottimizzare
+      il servizio offerto da questo sito web.
+
+      '
+    title: Ottimizzazione delle prestazioni
 save: Salva
+service:
+  disableAll:
+    description: Utilizzi questo interruttore per attivare o disattivare tutti i servizi.
+    title: Attivare o disattivare tutti i servizi
+  optOut:
+    description: Questo servizio è caricato di default (ma è possibile scegliere di
+      non usufruirne)
+    title: (opt-out)
+  purpose: Scopo dell
+  purposes: Finalità
+  required:
+    description: Questo servizio è sempre richiesto
+    title: (sempre richiesto)
