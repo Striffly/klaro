@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import translations from '../../translations/index';
 import { t, language } from '../../utils/i18n';
+import { injectStyles } from '../../utils/styling';
+import { themes } from '../../themes';
 import { BaseRetractingLabelInput } from './controls';
 import App from '../app'
 import { convertToMap, update } from '../../utils/maps';
@@ -34,7 +36,7 @@ function getTranslations(config){
 export const Demo = ({t: ttt, config}) => {
     const [show, setShow] = useState(0) 
     const [siteUrl, setSiteUrl] = useState('')
-    const [lang, setLang] = useState(config.languages > 0 ? config.languages[0] : 'en')
+    const [lang, setLang] = useState(config.languages.length > 0 ? config.languages[0] : 'en')
     const [testStore, setTestStore] = useState(new TestStore())
     const auxiliaryTestStore = new TestStore()
     const manager = new ConsentManager(config, testStore, auxiliaryTestStore);
@@ -44,6 +46,13 @@ export const Demo = ({t: ttt, config}) => {
     const testOnSite = () => {
         window.open(siteUrl+`#klaro-testing&klaro-config=${config.name}`)
     }
+
+    const appRef = useRef(null)
+
+    useEffect(() => {
+        injectStyles(config, themes, appRef.current)
+    })
+
     return <div className="cm-demo">
         <p className="cm-section-description">
             {ttt(['demo', 'description'])}
@@ -71,11 +80,13 @@ export const Demo = ({t: ttt, config}) => {
                 </button>
             </div>
         </div>
-        <App t={tt}
-            lang={lang}
-            manager={manager}
-            config={config}
-            show={show}
-        />
+        <div ref={appRef}>
+            <App t={tt}
+                lang={lang}
+                manager={manager}
+                config={config}
+                show={show}
+            />
+        </div>
     </div>
 }

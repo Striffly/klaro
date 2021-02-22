@@ -5,9 +5,11 @@ import App from './components/app'
 import ContextualConsentNotice from './components/contextual-consent-notice'
 import ConsentManager from './consent-manager'
 import KlaroApi from './utils/api';
+import {injectStyles} from './utils/styling'
 import {render as reactRender} from 'react-dom'
 import {convertToMap, update} from './utils/maps'
 import {t, language} from './utils/i18n'
+import {themes} from './themes'
 import {currentScript, dataset, applyDataset} from './utils/compat'
 export {update as updateConfig} from './utils/config'
 import './scss/klaro.scss'
@@ -89,7 +91,9 @@ export function render(config, opts){
     if (opts.api !== undefined)
         manager.watch(opts.api)
 
-    const lang = language(config.lang)
+    injectStyles(config, themes, element)
+
+    const lang = language(config)
     const configTranslations = getConfigTranslations(config)
     const tt = (...args) => t(configTranslations, lang, config.fallbackLang || 'zz', ...args)
     const app = reactRender(<App t={tt}
@@ -108,40 +112,48 @@ export function renderContextualConsentNotices(manager, tt, lang, config, opts){
     const notices = []
     for(const service of config.services){
         const consent = manager.getConsent(service.name)
-        if (!consent){
-            const elements = document.querySelectorAll("[data-name='"+service.name+"']")
-            for(const element of elements){
-                const ds = dataset(element)
-                if (element.tagName === 'IFRAME' || element.tagName === 'DIV'){
-                    let placeholderElement = element.previousElementSibling
-                    if (placeholderElement !== null){
-                        const ds = dataset(placeholderElement)
-                        if (ds.type !== "placeholder" || ds.name !== service.name)
-                            placeholderElement = null
-                    }
-                    if (placeholderElement === null){
-                        placeholderElement = document.createElement("DIV")
-                        placeholderElement.style.maxWidth = element.width+"px"
-                        placeholderElement.style.height = element.height+"px"
-                        applyDataset({type: 'placeholder', name: service.name}, placeholderElement)
-                        element.parentElement.insertBefore(placeholderElement, element)
-                        const notice = reactRender(<ContextualConsentNotice t={tt}
-                            lang={lang}
-                            manager={manager}
-                            config={config}
-                            service={service}
-                            testing={opts.testing}
-                            api={opts.api} />, placeholderElement)
-                        notices.push(notice)
+        const elements = document.querySelectorAll("[data-name='"+service.name+"']")
+        for(const element of elements){
+            const ds = dataset(element)
+            if (ds.type === 'placeholder')
+                continue
+            if (element.tagName === 'IFRAME' || element.tagName === 'DIV'){
+                let placeholderElement = element.previousElementSibling
+                if (placeholderElement !== null){
+                    const ds = dataset(placeholderElement)
+                    if (ds.type !== "placeholder" || ds.name !== service.name)
+                        placeholderElement = null
+                }
+                if (placeholderElement === null){
+                    placeholderElement = document.createElement("DIV")
+                    placeholderElement.style.maxWidth = element.width+"px"
+                    placeholderElement.style.height = element.height+"px"
+                    applyDataset({type: 'placeholder', name: service.name}, placeholderElement)
+                    // if consent is already given, we still insert an invisble placeholder that
+                    // might be revealed later if the user changes the consent decision
+                    if (consent)
+                        placeholderElement.style.display = 'none'
+                    element.parentElement.insertBefore(placeholderElement, element)
+                    const notice = reactRender(<ContextualConsentNotice t={tt}
+                        lang={lang}
+                        manager={manager}
+                        config={config}
+                        service={service}
+                        style={ds.style}
+                        testing={opts.testing}
+                        api={opts.api} />, placeholderElement)
+                    notices.push(notice)
 
-                    }
-                    if (element.tagName === 'IFRAME'){
-                        ds['src'] = element.src
-                    }
-                    if (ds['original-display'] === undefined)
-                        ds['original-display'] = element.style.display
-                    applyDataset(ds, element)
-                    element.src = undefined
+                }
+                if (element.tagName === 'IFRAME'){
+                    ds['src'] = element.src
+                }
+                if (ds['modified-by-klaro'] === undefined && element.style.display === undefined)
+                    ds['original-display'] = element.style.display
+                ds['modified-by-klaro'] = 'yes'
+                applyDataset(ds, element)
+                if (!consent){
+                    element.src = ''
                     element.style.display = 'none'
                 }
             }
@@ -227,6 +239,9 @@ export function validateConfig(config){
 }
 
 export function setup(config){
+    // if no window object is given we return immediately
+    if (window === undefined)
+        return;
     const script = currentScript("klaro");
     const hashParams = getHashParams();
 
@@ -248,20 +263,39 @@ export function setup(config){
         if (klaroId !== null){
             // we initialize with an API backend
             const api = new KlaroApi(klaroApiUrl, klaroId, {testing: hashParams.get('klaro-testing')})
-            api.loadConfig(klaroConfigName).then((config) => {
+            if (window.klaroApiConfigs !== undefined){
+                // the configs were already supplied with the Klaro binary
 
-                // an event handler can interrupt the initialization, e.g. if it wants to perform
-                // its own initialization given the API configs
-                if (executeEventHandlers("apiConfigsLoaded", [config], api) === true){
+                if (executeEventHandlers("apiConfigsLoaded", window.klaroApiConfigs, api) === true){
                     return
                 }
-                defaultConfig = config
-                doOnceLoaded(() => initialize({api: api}))
 
-            }).catch((err) => {
-                console.error(err, "cannot load Klaro configs")
-                executeEventHandlers("apiConfigsFailed", err)
-            })
+                const config = window.klaroApiConfigs.find(config => config.name === klaroConfigName)
+
+                if (config !== undefined){
+                    defaultConfig = config
+                    doOnceLoaded(() => initialize({api: api}))
+                } else {
+                    executeEventHandlers("apiConfigsFailed", {})
+                }
+
+            } else {
+                // we load the configs separately...
+                api.loadConfig(klaroConfigName).then((config) => {
+
+                    // an event handler can interrupt the initialization, e.g. if it wants to perform
+                    // its own initialization given the API configs
+                    if (executeEventHandlers("apiConfigsLoaded", [config], api) === true){
+                        return
+                    }
+                    defaultConfig = config
+                    doOnceLoaded(() => initialize({api: api}))
+
+                }).catch((err) => {
+                    console.error(err, "cannot load Klaro configs")
+                    executeEventHandlers("apiConfigsFailed", err)
+                })
+            }
         } else {
             // we initialize with a local config instead
             const configName = script.getAttribute('data-klaro-config') || "klaroConfig"

@@ -25,6 +25,7 @@ export default class ConsentManager {
         this.confirmed = false // true if the user actively confirmed his/her consent
         this.changed = false // true if the service config changed compared to the cookie
         this.states = {} // keep track of the change (enabled, disabled) of individual services
+        this.initialized = {} // keep track of which services have been initialized already
         this.executedOnce = {} //keep track of which services have been executed at least once
         this.watchers = new Set([])
         this.loadConsents()
@@ -168,34 +169,76 @@ export default class ConsentManager {
         this.notify('saveConsents', {changes: changes, consents: this.consents, type: eventType})
     }
 
-    applyConsents(dryRun, alwaysConfirmed){
+    applyConsents(dryRun, alwaysConfirmed, serviceName, temporary){
+
+        function executeHandler(handler, opts){
+            if (handler === undefined)
+                return
+            let handlerFunction
+            if (typeof handler === 'function'){
+                handlerFunction = handler
+            } else {
+                // eslint-disable-next-line no-new-func
+                handlerFunction = new Function('opts', handler)
+            }
+            return handlerFunction(opts)
+        }
+
         let changedServices = 0
+
+        // we make sure all services are properly initialized
         for(let i=0;i<this.config.services.length;i++){
             const service = this.config.services[i]
+            if (serviceName !== undefined && serviceName !== service.name)
+                continue
+            const vars = service.vars || {}
+            const handlerOpts = {service: service, config: this.config, vars: vars}
+            // we execute the init function of the service (if it is defined)
+            if (!this.initialized[service.name]){
+                this.initialized[service.name] = true
+                executeHandler(service.onInit, handlerOpts)
+            }
+        }
+
+        for(let i=0;i<this.config.services.length;i++){
+            const service = this.config.services[i]
+            if (serviceName !== undefined && serviceName !== service.name)
+                continue
             const state = this.states[service.name]
+            const vars = service.vars || {}
             const optOut = (service.optOut !== undefined ? service.optOut : (this.config.optOut || false))
             const required = (service.required !== undefined ? service.required : (this.config.required || false))
             //opt out and required services are always treated as confirmed
             const confirmed = this.confirmed || optOut || dryRun || alwaysConfirmed
             const consent = (this.getConsent(service.name) && confirmed) || required
-            if (state === consent)
-                continue
-            changedServices++
+            const handlerOpts = {service: service, config: this.config, vars: vars, consents: this.consents, confirmed: this.confirmed}
+
+            if (state !== consent)
+                changedServices++
+
             if (dryRun)
                 continue
-            this.updateServiceElements(service, consent)
-            this.updateServiceCookies(service, consent)
+
+            // we execute custom service handlers (if they are defined)
+            executeHandler(consent ? service.onAccept : service.onDecline, handlerOpts)
+            this.updateServiceElements(service, consent, temporary)
+            this.updateServiceCookies(service, consent, temporary)
+
+            // we execute the service callback (if one is defined)
             if (service.callback !== undefined)
-                service.callback(consent, service)
+                service.callback(consent, service, temporary)
+
+            // we execute the global callback (if one is defined)
             if (this.config.callback !== undefined)
-                this.config.callback(consent, service)
+                this.config.callback(consent, service, temporary)
+
             this.states[service.name] = consent
         }
-        this.notify('applyConsents', changedServices)
+        this.notify('applyConsents', changedServices, serviceName, temporary)
         return changedServices
     }
 
-    updateServiceElements(service, consent){
+    updateServiceElements(service, consent, temporary){
 
         // we make sure we execute this service only once if the option is set
         if (consent){
@@ -206,6 +249,7 @@ export default class ConsentManager {
 
         const elements = document.querySelectorAll("[data-name='"+service.name+"']")
         for(let i=0;i<elements.length;i++){
+
             const element = elements[i]
 
             const parent = element.parentElement
@@ -213,17 +257,29 @@ export default class ConsentManager {
             const {type, src, href} = ds
             const attrs = ['href', 'src']
 
-            //if no consent was given we disable this tracker
-            //we remove and add it again to trigger a re-execution
-            if (element.tagName === 'DIV' && type === 'placeholder'){
-                if (consent)
-                    element.remove()
+            // we handle placeholder elements here...
+            if (type === 'placeholder'){
+                if (consent){
+                    element.style.display = 'none';
+                    ds['original-display'] = element.style.display;
+                }
+                else{
+                    element.style.display = ds['original-display'] || 'block';
+                }
                 continue
+            }
+
+            if (temporary){
+                // consent was granted for this session
+                if (ds['accepted-once'])
+                    consent = true
+                else if (consent)
+                    element.setAttribute('data-accepted-once', 'yes')
             }
 
             if (element.tagName === 'IFRAME'){
                 // this element is already active, we do not touch it...
-                if (element.src === src){
+                if (consent && element.src === src){
                     // eslint-disable-next-line no-console
                     console.debug(`Skipping ${element.tagName} for service ${service.name}, as it already has the correct type...`)
                     continue
@@ -234,24 +290,31 @@ export default class ConsentManager {
                 for(const attribute of element.attributes){
                     newElement.setAttribute(attribute.name, attribute.value)
                 }
-
                 newElement.innerText = element.innerText
                 newElement.text = element.text
+
                 if (consent){
-                    newElement.style.display = ds['original-display'] || 'block'
+                    if (ds['original-display'] !== undefined)
+                        newElement.style.display = ds['original-display']
                     if (ds.src !== undefined)
                         newElement.src = ds.src
                 } else {
                     newElement.src = ''
+                    if (ds['modified-by-klaro'] !== undefined && ds['original-display'] !== undefined) // this is already a placeholder
+                        newElement.setAttribute('data-original-display', ds['original-display'])
+                    else {// this is a new element we haven't touched before
+                        if (element.style.display !== undefined)
+                            newElement.setAttribute('data-original-display', element.style.display)
+                        newElement.setAttribute('data-modified-by-klaro', 'yes')
+                    }
+                    newElement.style.display = 'none'
                 }
                 //we remove the original element and insert a new one
                 parent.insertBefore(newElement, element)
                 parent.removeChild(element)
-            }
-
-            if (element.tagName === 'SCRIPT' || element.tagName === 'LINK'){
+            } else if (element.tagName === 'SCRIPT' || element.tagName === 'LINK'){
                 // this element is already active, we do not touch it...
-                if (element.type === type && element.src === src){
+                if (consent && element.type === type && element.src === src){
                     // eslint-disable-next-line no-console
                     console.debug(`Skipping ${element.tagName} for service ${service.name}, as it already has the correct type or src...`)
                     continue
@@ -293,22 +356,24 @@ export default class ConsentManager {
                         element.title = ds.title
                     if (ds['original-display'] !== undefined){
                         element.style.display = ds['original-display']
+                    } else {
+                        element.style.removeProperty('display')
                     }
                 }
                 else{
                     if (ds.title !== undefined)
                         element.removeAttribute('title')
-                    if (ds.hide === "true"){
-                        if (ds['original-display'] === undefined)
-                            ds['original-display'] = element.style.display
-                        element.style.display = 'none'
-                    }
+                    if (ds['original-display'] === undefined && element.style.display !== undefined)
+                        ds['original-display'] = element.style.display
+                    element.style.display = 'none'
                     for(const attr of attrs){
                         const attrValue = ds[attr]
                         if (attrValue === undefined)
                             continue
                         if (ds['original-'+attr] !== undefined)
                             element[attr] = ds['original-'+attr]
+                        else
+                            element.removeAttribute(attr)
                     }
                 }
                 applyDataset(ds, element)
@@ -342,7 +407,10 @@ export default class ConsentManager {
                 if (cookiePattern === undefined)
                     continue
                 if (!(cookiePattern instanceof RegExp)){
-                    cookiePattern = new RegExp('^'+escapeRegexStr(cookiePattern)+'$')
+                    if (cookiePattern.startsWith('^')) // we assume this is already a regex
+                        cookiePattern = new RegExp(cookiePattern)
+                    else // we assume this is a normal string
+                        cookiePattern = new RegExp('^'+escapeRegexStr(cookiePattern)+'$')
                 }
                 for(let j=0;j<cookies.length;j++){
                     const cookie = cookies[j]
@@ -354,6 +422,11 @@ export default class ConsentManager {
                             "Path:", cookiePath,
                             "Domain:", cookieDomain)
                         deleteCookie(cookie.name, cookiePath, cookieDomain)
+                        // if no cookie domain is given, we also try to delete the cookie with
+                        // domain '.[current domain]' as some services set cookies for this
+                        // dotted domain explicitly (e.g. the Facebook pixel).
+                        if (cookieDomain === undefined)
+                            deleteCookie(cookie.name, cookiePath, '.'+window.location.hostname)
                     }
                 }
             }
