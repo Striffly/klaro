@@ -249,8 +249,27 @@ const klaroWithoutTranslationsConfig = {
     },
 };
 
+const klaroCustomConfig = {
+    ...config,
+    ...{
+        output: {
+            path: BUILD_DIR,
+            filename: SEPARATE_CSS
+              ? 'klaro-custom-no-css.js'
+              : 'klaro-custom.js',
+            library: 'klaro',
+            libraryTarget: 'umd',
+            publicPath: '',
+        },
+        entry: {
+            klaro: SRC_DIR + '/klaro-custom.js',
+        },
+    },
+};
+
 module.exports = [
     config,
     klaroWithoutTranslationsConfig,
     klaroWithTranslationsConfig,
+    klaroCustomConfig
 ];
